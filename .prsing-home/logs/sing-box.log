@@ -1,5 +1,0 @@
-[31mFATAL[0m[0000] start service: start inbound: start inbound/tun[pr-tun]: configure tun interface: open tun: TUNSETIFF: operation not permitted
--0400 2026-10-23 05:49:42 INFO inbound/mixed[pr-mixed]: tcp server started at 127.0.0.1:2080
--0400 2026-10-23 05:49:42 INFO network: updated default interface eth0, index 2
--0400 2026-10-23 05:49:42 INFO network: updated network environment: gateway 172.25.0.1, gateway_mac 2a:47:01:c6:69:c0
--0400 2026-10-23 05:49:42 INFO sing-box started (0.00s)
