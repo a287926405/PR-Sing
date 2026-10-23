@@ -1,137 +1,110 @@
 #!/bin/sh
-# PR-Sing 安装脚本：安装面板代码 + 下载 sing-box 内核 + 注册服务。
-# 用法: ./install.sh
-# 可选环境变量: INSTALL_DIR(默认 /opt/pr-sing) DATA_DIR(默认 /opt/pr-sing/data) PANEL_PORT(默认 3001) REPO_URL(默认 https://github.com/a287926405/PR-Sing.git) SRC_DIR(默认脚本所在目录)
+# PR-Sing 安装脚本
 set -e
 
-VERSION="1.14.3"
+REPO="a287926405/PR-Sing"
+GH="https://github.com/${REPO}"
+GH_PROXY="${GH_PROXY:-https://gh-proxy.com/}"
+
+log() { echo "=== $* ==="; }
+
 INSTALL_DIR="${INSTALL_DIR:-/opt/pr-sing}"
 DATA_DIR="${DATA_DIR:-/opt/pr-sing/data}"
 PANEL_PORT="${PANEL_PORT:-3001}"
 PANEL_LISTEN="${PANEL_LISTEN:-0.0.0.0}"
-SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")" && pwd)}"
-REPO_URL="${REPO_URL:-https://github.com/a287926405/PR-Sing.git}"
+SB_VER="${SB_VER:-1.14.3}"
 
-echo "=== PR-Sing 安装 ==="
-echo "代码目录: $INSTALL_DIR"
-echo "数据目录: $DATA_DIR"
-echo "面板:     $PANEL_LISTEN:$PANEL_PORT"
-
-command -v python3 >/dev/null 2>&1 || { echo "错误: 需要 python3"; exit 1; }
-
-mkdir -p "$INSTALL_DIR" "$DATA_DIR/config" "$DATA_DIR/logs" "$DATA_DIR/bin"
-
-# ---------- 1. 获取代码 ----------
-if [ -f "$SRC_DIR/prsing/paths.py" ] && [ -f "$SRC_DIR/run.py" ]; then
-  echo "使用本地源码目录: $SRC_DIR"
-else
-  # 本地没有源码（例如由 bootstrap.sh 下载 install.sh 后执行）：下载仓库压缩包
-  _tmp="$(mktemp -d)"
-  _zip_url="${REPO_URL%.git}/archive/master.zip"
-  echo "下载仓库: $_zip_url"
-  if command -v wget >/dev/null 2>&1; then
-    wget -q -O "$_tmp/repo.zip" "$_zip_url"
-  elif command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$_tmp/repo.zip" "$_zip_url"
-  else
-    echo "错误: 无法下载仓库，需要 wget 或 curl"; rm -rf "$_tmp"; exit 1
-  fi
-  if command -v unzip >/dev/null 2>&1; then
-    unzip -q -o "$_tmp/repo.zip" -d "$_tmp"
-    _code="$(find "$_tmp" -maxdepth 1 -type d -name "PR-Sing-*" -print -quit)"
-  else
-    python3 - "$_tmp/repo.zip" "$_tmp/unpacked" <<'PYEOF'
-import sys, zipfile
-z = zipfile.ZipFile(sys.argv[1]); z.extractall(sys.argv[2])
-PYEOF
-    _code="$(find "$_tmp/unpacked" -maxdepth 1 -type d -name "PR-Sing-*" -print -quit)"
-  fi
-  if [ -n "$_code" ]; then
-    SRC_DIR="$_code"
-  fi
-  rm -rf "$_tmp"
+# ---- 定位源码目录（默认：安装脚本所在目录；可由 bootstrap 预置） ----
+SRC_DIR="${SRC_DIR:-}"
+if [ -z "$SRC_DIR" ]; then
+  SRC_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
+fi
+if [ ! -d "$SRC_DIR/prsing" ]; then
+  echo "错误：未找到 PR-Sing 源码（缺少 prsing/ 目录）。"
+  echo "请使用 bootstrap.sh 一键安装，或先下载仓库源码后再运行 install.sh。"
+  exit 1
 fi
 
+# ---- 下载 sing-box 内核 ----
+KERNEL_ARCH="$(uname -m)"
+case "$KERNEL_ARCH" in
+  aarch64|arm64) KERNEL_ARCH_NAME="arm64" ;;
+  x86_64|amd64)  KERNEL_ARCH_NAME="amd64" ;;
+  *) echo "不支持的架构：$KERNEL_ARCH"; exit 1 ;;
+esac
+
+SB_FILE="sing-box-${SB_VER}-linux-${KERNEL_ARCH_NAME}.tar.gz"
+SB_URL="${GH}/releases/download/v${SB_VER}/${SB_FILE}"
+
+log "下载 sing-box 内核 v${SB_VER} ($KERNEL_ARCH)"
+mkdir -p "$INSTALL_DIR/bin"
+TMP_KERNEL="$(mktemp -d)"
+cd "$TMP_KERNEL"
+if command -v wget >/dev/null 2>&1; then
+  wget -q -O kernel.tar.gz "${GH_PROXY}${SB_URL}"
+elif command -v curl >/dev/null 2>&1; then
+  curl -fsSL -o kernel.tar.gz "${GH_PROXY}${SB_URL}"
+fi
+tar -xzf kernel.tar.gz --strip-components=1 "sing-box-${SB_VER}-linux-${KERNEL_ARCH_NAME}/sing-box"
+cp sing-box "$INSTALL_DIR/bin/sing-box"
+chmod +x "$INSTALL_DIR/bin/sing-box"
+rm -rf "$TMP_KERNEL"
+"$INSTALL_DIR/bin/sing-box" version
+
+# ---- 复制面板源码到 $INSTALL_DIR ----
+log "复制面板源码到 $INSTALL_DIR"
 cp -r "$SRC_DIR/prsing" "$INSTALL_DIR/"
 cp "$SRC_DIR/run.py" "$INSTALL_DIR/"
-cp "$SRC_DIR/README.md" "$INSTALL_DIR/" 2>/dev/null || true
-echo "代码安装完成"
+cp "$SRC_DIR/README.md" "$INSTALL_DIR/"
+cp "$SRC_DIR/LICENSE" "$INSTALL_DIR/"
+cp "$SRC_DIR/.gitignore" "$INSTALL_DIR/" 2>/dev/null || true
+cp "$SRC_DIR/uninstall.sh" "$INSTALL_DIR/" 2>/dev/null || true
+rm -rf "$SRC_DIR"
 
-# ---------- 2. sing-box 内核 ----------
-ARCH="$(uname -m)"
-case "$ARCH" in
-  x86_64)          AS="linux-amd64" ;;
-  aarch64|arm64)   AS="linux-arm64-v8a" ;;
-  armv7l)          AS="linux-armv7-32" ;;
-  i386|i686)       AS="linux-386" ;;
-  *)               AS="" ;;
-esac
-SB="$DATA_DIR/bin/sing-box"
-if [ -x "$SB" ]; then
-  echo "内核已存在: $SB ($("$SB" version 2>/dev/null | head -1))"
-else
-  [ -n "$AS" ] || { echo "错误: 不支持的架构 $ARCH，请手动放置 sing-box 到 $SB"; exit 1; }
-  echo "下载 sing-box v$VERSION ($AS)…"
-  _tmp="$(mktemp -d)"
-  for CAND in "sing-box-${AS}.tar.gz" "sing-box-${AS}-glibc.tar.gz"; do
-    _url="https://github.com/SagerNet/sing-box/releases/download/v${VERSION}/${CAND}"
-    if wget -q -O "$_tmp/sb.tar.gz" "$_url" 2>/dev/null || curl -fsSL -o "$_tmp/sb.tar.gz" "$_url" 2>/dev/null; then
-      tar -xzf "$_tmp/sb.tar.gz" -C "$_tmp"
-      _bin="$(find "$_tmp" -type f -name "sing-box" | head -1)"
-      [ -n "$_bin" ] || _bin="$(find "$_tmp" -type f -name "sing-box*" ! -name "*.txt" | head -1)"
-      if [ -n "$_bin" ]; then
-        cp "$_bin" "$SB"
-        chmod +x "$SB"
-        echo "内核安装完成: $SB"
-        break
-      fi
-    fi
-  done
-  rm -rf "$_tmp"
-  [ -x "$SB" ] || { echo "错误: sing-box 下载失败，请手动下载 v$VERSION 放到 $SB 后重跑本脚本"; exit 1; }
-fi
-"$SB" version | head -1
+# ---- 生成 bootstrap 启动脚本 ----
+log "生成启动脚本"
+cat > "$INSTALL_DIR/bootstrap.sh" <<EOF
+#!/bin/sh
+set -e
+cd "$INSTALL_DIR"
+PRSING_HOME="${DATA_DIR}" python3 run.py --listen "${PANEL_LISTEN}" --port "${PANEL_PORT}" "\$@"
+EOF
+chmod +x "$INSTALL_DIR/bootstrap.sh"
 
-# ---------- 3. 服务 ----------
-if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-  PY="$(command -v python3)"
+# ---- 注册系统服务 ----
+log "注册系统服务"
+if command -v systemctl >/dev/null 2>&1 && [ -d /etc/systemd/system ]; then
   cat > /etc/systemd/system/pr-sing.service <<EOF
 [Unit]
-Description=PR-Sing sing-box transparent proxy panel
+Description=PR-Sing Panel
 After=network.target
 
 [Service]
+Type=simple
+WorkingDirectory=$INSTALL_DIR
 Environment=PRSING_HOME=$DATA_DIR
-ExecStart=$PY $INSTALL_DIR/run.py --listen $PANEL_LISTEN --port $PANEL_PORT
-Restart=always
-RestartSec=3
+ExecStart=$INSTALL_DIR/bootstrap.sh
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  systemctl enable pr-sing >/dev/null 2>&1
-  systemctl restart pr-sing
-  echo "systemd 服务已启用: pr-sing"
-else
+  systemctl enable pr-sing.service
+  systemctl start pr-sing.service
+  echo "服务已注册并启动：pr-sing.service"
+elif [ -d /usr/local/bin ]; then
   cat > /usr/local/bin/pr-sing-start <<EOF
 #!/bin/sh
-export PRSING_HOME=$DATA_DIR
-nohup python3 $INSTALL_DIR/run.py --listen $PANEL_LISTEN --port $PANEL_PORT >> $DATA_DIR/logs/panel.out 2>&1 &
+PRSING_HOME="$DATA_DIR" python3 "$INSTALL_DIR/run.py" --listen "$PANEL_LISTEN" --port "$PANEL_PORT" &
 EOF
   chmod +x /usr/local/bin/pr-sing-start
-  echo "未检测到 systemd，使用脚本方式启动"
-  /usr/local/bin/pr-sing-start
+  echo "已写入 /usr/local/bin/pr-sing-start，请手动启动或加入开机自启。"
+else
+  echo "未检测到 systemd，请手动运行：$INSTALL_DIR/bootstrap.sh"
 fi
 
-sleep 2
-echo ""
 echo "=== 安装完成 ==="
-echo "面板地址:   http://<本机IP>:$PANEL_PORT"
-echo "默认密码:   pr-sing  （登录后请立即修改）"
-echo "数据目录:   $DATA_DIR"
-if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-  echo "服务状态:   systemctl status pr-sing"
-else
-  echo "启动/停止:  /usr/local/bin/pr-sing-start | /usr/local/bin/pr-sing-stop"
-fi
+echo "面板地址：http://<本机IP>:${PANEL_PORT}"
+echo "默认密码：pr-sing"
+echo "控制脚本：$INSTALL_DIR/bootstrap.sh"

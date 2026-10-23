@@ -1,0 +1,28 @@
+# PR-Sing 运行时数据（不应进入仓库）
+.prsing-home/
+.prsing-home/**/*
+.prsing-home/*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.env
+.venv/
+env/
+venv/
+
+# 日志
+*.log
+logs/
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 编译产物
+*.tar.gz
+*.zip
+kernel.tar.gz
