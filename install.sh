@@ -34,7 +34,7 @@ case "$KERNEL_ARCH" in
 esac
 
 SB_FILE="sing-box-${SB_VER}-linux-${KERNEL_ARCH_NAME}.tar.gz"
-SB_URL="${GH}/releases/download/v${SB_VER}/${SB_FILE}"
+SB_URL="https://github.com/SagerNet/sing-box/releases/download/v${SB_VER}/${SB_FILE}"
 
 log "下载 sing-box 内核 v${SB_VER} ($KERNEL_ARCH)"
 mkdir -p "$INSTALL_DIR/bin"
