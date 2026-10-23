@@ -1,22 +1,23 @@
 """节点管理：分享链接解析（v1.14 outbound 格式）、CRUD、批量导入。
 
 支持协议：vless / vmess / trojan / shadowsocks / hysteria2 / tuic /
-naive / socks / http(s) / snell。
+naive / socks / http(s)。
 也支持直接粘贴 sing-box outbound JSON（手动节点）。
+注：sing-box 没有 Snell 出站，snell:// 链接不受支持（会明确报错）。
 """
 
 import base64
 import binascii
 import json
 import re
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 from . import paths, store
 from .store import new_id
 
 PROTOCOL_TYPES = (
     "vless", "vmess", "trojan", "shadowsocks", "hysteria2", "tuic",
-    "naive", "socks", "http", "snell",
+    "naive", "socks", "http",
 )
 
 UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -216,11 +217,17 @@ def _parse_ss(url: str, q: dict, host: str, port: int, name: str) -> dict:
     body, q2, host3, port3 = body, q, host, port
     if "@" in body:
         cred, _, hostport = body.partition("@")
+        # SIP002 两种写法：base64(method:password) 或明文 method:password。
+        # 先试 base64，解出的内容形如 method:password 且可打印才采用，
+        # 否则按明文处理（此前无条件按 base64 解，明文链接必然损坏）。
+        decoded = None
         try:
-            decoded = _b64decode(cred)
+            d = _b64decode(cred)
+            if ":" in d and all(32 <= ord(ch) < 127 for ch in d):
+                decoded = d
         except (ValueError, binascii.Error):
-            decoded = cred
-        method, _, password = decoded.partition(":")
+            decoded = None
+        method, _, password = (decoded if decoded is not None else cred).partition(":")
         host3, port3 = _split_host_port(hostport, port)
     else:
         try:
@@ -335,21 +342,6 @@ def _parse_generic_proxy(scheme: str, url: str, q: dict, host: str, port: int, n
 
 
 
-def _parse_sntell(url, q, host, port, name):
-    body = url[len("sntell://"):]
-    if "@" not in body:
-        raise ValueError("sntell 链接格式不正确（缺少 psk）")
-    psk, _, hostport = body.partition("@")
-    host2, port2 = _split_host_port(hostport, port)
-    if not psk:
-        raise ValueError("sntell 缺少 psk")
-    cfg = _base_cfg(host2, port2)
-    cfg["psk"] = psk
-    if q.get("userkey"):
-        cfg["userkey"] = q["userkey"]
-    return {"name": name, "type": "sntell", "cfg": cfg}
-
-
 def parse_link(url: str) -> dict:
     """解析单条分享链接，返回 {name, type, cfg}。失败抛 ValueError。"""
     url = url.strip()
@@ -370,7 +362,8 @@ def parse_link(url: str) -> dict:
         return {"name": obj.get("tag") or obj.get("name") or "手动节点",
                 "type": obj["type"], "cfg": cfg}
     body, raw_name = _split_name(url)
-    name = _b64decode_try(raw_name) or raw_name
+    # # 后的名称是 URL 百分号编码，必须先 unquote，否则中文名全是 %E6%... 乱码
+    name = _b64decode_try(unquote(raw_name)) or unquote(raw_name)
     url = body  # 后续各协议解析器只看去掉 #名称 的部分
 
     if low.startswith("vless://"):
@@ -426,13 +419,8 @@ def parse_link(url: str) -> dict:
     if low.startswith("http://"):
         up = urlparse(url)
         return _parse_generic_proxy("http", url, _q1(parse_qs(up.query)), up.hostname or "", up.port or 3128, name)
-    if low.startswith("sntell://"):
-        up = urlparse(url)
-        q = _q1(parse_qs(up.query))
-        host, port = up.hostname or "", 443
-        if up.port:
-            port = up.port
-        return _parse_sntell(url, q, host, port, name)
+    if low.startswith("snell://"):
+        raise ValueError("sing-box 不支持 Snell 协议出站，无法导入 snell 节点")
     scheme = url.split("://")[0] if "://" in url else url[:12]
     raise ValueError(f"不支持的链接协议: {scheme}")
 
@@ -464,14 +452,16 @@ def _b64decode_try(s: str) -> str:
 
 
 def parse_links(text: str) -> tuple:
-    """批量解析多行链接。返回 (nodes, errors)。"""
+    """批量解析多行链接。返回 (nodes, errors)；行号为原文真实行号（含空行）。"""
     nodes, errors = [], []
-    for i, line in enumerate(l for l in text.splitlines() if l.strip()):
+    for i, line in enumerate(text.splitlines(), start=1):
         line = line.strip()
+        if not line:
+            continue
         try:
             nodes.append(parse_link(line))
         except Exception as e:
-            errors.append({"line": i + 1, "text": line[:120], "error": str(e)})
+            errors.append({"line": i, "text": line[:120], "error": str(e)})
     return nodes, errors
 
 

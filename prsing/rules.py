@@ -1,7 +1,7 @@
-"""规则库（rule-set .srs）与 Geo 数据下载管理。
+"""规则库（rule-set .srs）下载管理。
 
-sing-box v1.14 起，路由/DNS 规则的域名站点匹配使用 rule-set（.srs 二进制），
-不再直接引用 geosite 数据库；中国大陆 IP 同时保留 geoip 数据库（.db 格式）。
+sing-box v1.14 起，路由/DNS 规则的域名与 IP 匹配统一使用 rule-set（.srs 二进制）；
+旧的 geosite/geoip 数据库引用方式已移除，本模块不再下载 geoip.dat/.db。
 """
 
 import json
@@ -20,9 +20,8 @@ RULESETS = {
     "geoip-cn": ("geoip-cn.srs", "geoip"),
 }
 
-GEO_FILES = {
-    "geoip": ("geoip.db", "geoip", "geoip.dat"),
-}
+# 旧 geoip 数据库已不再被生成的配置引用，停止下载（保留空表兼容 status 结构）。
+GEO_FILES = {}
 
 
 def _ruleset_url_base(s: dict, source: str) -> str:

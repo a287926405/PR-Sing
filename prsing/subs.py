@@ -66,7 +66,6 @@ def delete(sub_id: str) -> bool:
     if len(new) == len(subs):
         return False
     # 同时移除该订阅下的节点
-    ids = {s2["id"] for s2 in new}
     removed_ids = []
     for s in subs:
         if s["id"] == sub_id:
@@ -144,7 +143,13 @@ def refresh(sub_id: str) -> dict:
     nodes_mod._save_nodes(all_nodes)
     sub["node_ids"] = list(kept)
     sub["updated_at"] = int(time.time())
+    # 把更新后的 sub 写回订阅列表再保存（此前重新加载一份新数据保存，
+    # 改过的 node_ids/updated_at 被丢弃，刷新结果从不落盘）
     subs = list_subs()
+    for i, s in enumerate(subs):
+        if s["id"] == sub_id:
+            subs[i] = sub
+            break
     _save(subs)
     return {"added": added, "kept": len(kept), "removed": len(old_ids), "errors": errors[:20]}
 

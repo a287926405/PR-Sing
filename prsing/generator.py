@@ -4,7 +4,8 @@
   - outbound: server + server_port（无 port），dial 字段带 domain_resolver
   - 链式代理: 出口 hop 为链对外 tag，hop<i>.detour = hop<i-1>
   - DNS: 新格式 servers[]/rules[]，站点匹配走 rule_set(.srs)
-  - route: 无 geosite 字段，改用 rule_set；geoip 数据库仍可用于自定义规则
+  - route: 无 geosite/geoip 字段（1.12+ 已移除），统一改用 rule_set；
+    自定义 geoip 规则会转换为 geoip-<国家代码> rule-set 引用（需对应 .srs 已下载）
 """
 
 import os
@@ -72,16 +73,37 @@ def _enabled_nodes():
     return [n for n in nodes_mod.list_nodes() if n.get("enabled")]
 
 
+def chain_public_tag(chain_id):
+    """链对外暴露的 outbound tag（出口 hop）；链不可用时返回 None。
+
+    与 _build_chains 的失效语义保持一致：链被禁用，或任一成员被删除/禁用，
+    整条链视为失效。
+    """
+    from . import chains as chains_mod
+    from . import nodes as nodes_mod
+    c = chains_mod.get(chain_id)
+    if not c or not c.get("enabled"):
+        return None
+    enabled_ids = {n["id"] for n in nodes_mod.list_nodes() if n.get("enabled")}
+    members = c.get("members", [])
+    if len(members) < 2 or any(m not in enabled_ids for m in members):
+        return None
+    return chain_hop_tag(chain_id, len(members))
+
+
 def _build_chains(enabled_nodes, outbounds, tag_of_name):
-    """生成链的 hop outbounds；返回 {chain_id: pub_tag}。"""
+    """生成链的 hop outbounds；返回 {chain_id: pub_tag}。
+
+    任一成员被删除/禁用时整条链失效（不生成），不静默跳过某一跳改变流量路径。
+    """
     from . import chains as chains_mod
     node_by_id = {n["id"]: n for n in enabled_nodes}
     result = {}
     for c in chains_mod.list_chains():
         if not c.get("enabled"):
             continue
-        members = [m for m in c.get("members", []) if m in node_by_id]
-        if len(members) < 2:
+        members = list(c.get("members", []))
+        if len(members) < 2 or any(m not in node_by_id for m in members):
             continue
         for i, mid in enumerate(members, start=1):
             src = node_by_id[mid]
@@ -124,7 +146,11 @@ def _build_groups(enabled_nodes, chain_pub, outbounds, tag_of_name):
         else:
             ob["type"] = "selector"
             d = g.get("default")
-            dtag = node_tag(d) if d in node_ids else None
+            dtag = None
+            if d in node_ids:
+                dtag = node_tag(d)
+            elif d in chain_pub:
+                dtag = chain_pub[d]
             if dtag not in member_tags:
                 dtag = member_tags[0]
             ob["default"] = dtag
@@ -135,22 +161,30 @@ def _build_groups(enabled_nodes, chain_pub, outbounds, tag_of_name):
 
 
 def _defined_rule_sets():
-    """已下载的 rule-set tag 集合。"""
+    """已下载的 rule-set tag 集合（内置清单 + 目录中实际存在的 *.srs）。"""
     tags = set()
     for tag, (fname, source) in rules_mod.RULESETS.items():
         p = os.path.join(paths.RULESET_DIR, fname)
         if os.path.isfile(p) and os.path.getsize(p) > 100:
             tags.add(tag)
+    try:
+        for fname in os.listdir(paths.RULESET_DIR):
+            if fname.endswith(".srs"):
+                p = os.path.join(paths.RULESET_DIR, fname)
+                if os.path.isfile(p) and os.path.getsize(p) > 100:
+                    tags.add(fname[:-4])
+    except OSError:
+        pass
     return tags
 
 
-def _custom_rules(raw_rules, tag_of_name):
+def _custom_rules(raw_rules, tag_of_name, rs_tags=()):
     out = []
     for r in raw_rules or []:
         if not isinstance(r, dict) or r.get("enabled") is False:
             continue
         try:
-            rule = _one_rule(r, tag_of_name)
+            rule = _one_rule(r, tag_of_name, rs_tags)
             if rule:
                 out.append(rule)
         except (ValueError, KeyError, TypeError):
@@ -158,7 +192,7 @@ def _custom_rules(raw_rules, tag_of_name):
     return out
 
 
-def _one_rule(r, tag_of_name):
+def _one_rule(r, tag_of_name, rs_tags=()):
     if "raw" in r and isinstance(r["raw"], dict):
         raw = dict(r["raw"])
         ob = tag_of_name.get(r.get("outbound", ""), "")
@@ -188,7 +222,17 @@ def _one_rule(r, tag_of_name):
     elif t == "ip_cidr":
         rule = {"ip_cidr": items}
     elif t == "geoip":
-        rule = {"geoip": items}
+        # sing-box 1.12+ 已移除 geoip 规则字段，改用 geoip-<国家> rule-set。
+        # 对应 .srs 未下载的国家直接让本条规则失效（抛错被 _custom_rules 跳过），
+        # 避免生成整份无法通过校验的配置。
+        tags = []
+        for v in items:
+            tag = "geoip-" + str(v).lower()
+            if tag in rs_tags:
+                tags.append(tag)
+        if not tags:
+            raise ValueError("geoip rule-set 未下载: %s" % ",".join(items))
+        rule = {"rule_set": tags}
     elif t == "rule_set":
         rule = {"rule_set": items}
     elif t == "source_ip_cidr":
@@ -321,10 +365,10 @@ def generate(settings=None, write=True):
             r_rules.append({"rule_set": ["geoip-cn"], "outbound": TAG_DIRECT})
         if settings.get("block_ads", True) and "geosite-category-ads-all" in rs_tags:
             r_rules.append({"rule_set": ["geosite-category-ads-all"], "outbound": TAG_BLOCK})
-        r_rules.extend(_custom_rules(settings.get("extra_rules"), tag_of_name))
+        r_rules.extend(_custom_rules(settings.get("extra_rules"), tag_of_name, rs_tags))
         final = TAG_MAIN if has_main else TAG_DIRECT
     elif mode == "custom":
-        r_rules.extend(_custom_rules(settings.get("extra_rules"), tag_of_name))
+        r_rules.extend(_custom_rules(settings.get("extra_rules"), tag_of_name, rs_tags))
         fo = settings.get("final_outbound") or "auto"
         final = tag_of_name.get(fo, TAG_MAIN)
         if not has_main and final == TAG_MAIN:
@@ -335,14 +379,12 @@ def generate(settings=None, write=True):
         "auto_detect_interface": True,
     }
     rule_set_cfg = []
-    for tag, (fname, source) in rules_mod.RULESETS.items():
-        if tag in rs_tags:
-            rule_set_cfg.append({"tag": tag, "type": "local", "format": "binary",
-                                 "path": os.path.join(paths.RULESET_DIR, fname)})
+    for tag in sorted(rs_tags):
+        fname = rules_mod.RULESETS.get(tag, (tag + ".srs", ""))[0]
+        rule_set_cfg.append({"tag": tag, "type": "local", "format": "binary",
+                             "path": os.path.join(paths.RULESET_DIR, fname)})
     if rule_set_cfg:
         route["rule_set"] = rule_set_cfg
-    if os.path.isfile(paths.GEO_IP_FILE):
-        route["geoip"] = {"path": paths.GEO_IP_FILE}
 
     cfg = {
         "log": {

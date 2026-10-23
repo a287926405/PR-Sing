@@ -26,6 +26,17 @@ if [ ! -d "$SRC_DIR/prsing" ]; then
   exit 1
 fi
 
+# ---- 升级时先停旧服务/进程，否则覆盖正在运行的内核会报 Text file busy ----
+if command -v systemctl >/dev/null 2>&1 && [ -f /etc/systemd/system/pr-sing.service ]; then
+  systemctl stop pr-sing.service 2>/dev/null || true
+fi
+for f in "$DATA_DIR/config/core.pid" "$DATA_DIR/config/panel.pid"; do
+  if [ -f "$f" ]; then
+    kill "$(cat "$f")" 2>/dev/null || true
+    rm -f "$f"
+  fi
+done
+
 # ---- 下载 sing-box 内核 ----
 KERNEL_ARCH="$(uname -m)"
 case "$KERNEL_ARCH" in
@@ -38,29 +49,36 @@ SB_FILE="sing-box-${SB_VER}-linux-${KERNEL_ARCH_NAME}.tar.gz"
 SB_URL="https://github.com/SagerNet/sing-box/releases/download/v${SB_VER}/${SB_FILE}"
 
 log "下载 sing-box 内核 v${SB_VER} ($KERNEL_ARCH)"
-mkdir -p "$INSTALL_DIR/bin"
+# 内核必须放在数据目录的 bin/ 下：运行时以 PRSING_HOME=$DATA_DIR 启动，
+# 程序按 $PRSING_HOME/bin/sing-box 查找内核（此前装到代码目录导致找不到内核）
+mkdir -p "$DATA_DIR/bin"
 TMP_KERNEL="$(mktemp -d)"
 cd "$TMP_KERNEL"
 if command -v wget >/dev/null 2>&1; then
   wget -q -O kernel.tar.gz "${GH_PROXY}${SB_URL}"
 elif command -v curl >/dev/null 2>&1; then
   curl -fsSL -o kernel.tar.gz "${GH_PROXY}${SB_URL}"
+else
+  echo "错误：需要 wget 或 curl 下载内核"; exit 1
 fi
 tar -xzf kernel.tar.gz --strip-components=1 "sing-box-${SB_VER}-linux-${KERNEL_ARCH_NAME}/sing-box"
-cp sing-box "$INSTALL_DIR/bin/sing-box"
-chmod +x "$INSTALL_DIR/bin/sing-box"
+cp sing-box "$DATA_DIR/bin/sing-box"
+chmod +x "$DATA_DIR/bin/sing-box"
 rm -rf "$TMP_KERNEL"
-"$INSTALL_DIR/bin/sing-box" version
+"$DATA_DIR/bin/sing-box" version
 
 # ---- 复制面板源码到 $INSTALL_DIR ----
 log "复制面板源码到 $INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
+# 先清掉旧代码目录，避免重复安装（升级）时 cp -r 嵌套出 prsing/prsing
+rm -rf "$INSTALL_DIR/prsing"
 cp -r "$SRC_DIR/prsing" "$INSTALL_DIR/"
 cp "$SRC_DIR/run.py" "$INSTALL_DIR/"
 cp "$SRC_DIR/README.md" "$INSTALL_DIR/"
 cp "$SRC_DIR/LICENSE" "$INSTALL_DIR/"
 cp "$SRC_DIR/.gitignore" "$INSTALL_DIR/" 2>/dev/null || true
 cp "$SRC_DIR/uninstall.sh" "$INSTALL_DIR/" 2>/dev/null || true
-rm -rf "$SRC_DIR"
+# 注意：绝不删除 $SRC_DIR（用户从 git clone 目录运行时那就是他的仓库）
 
 # ---- 生成 bootstrap 启动脚本 ----
 log "生成启动脚本"
@@ -74,6 +92,7 @@ chmod +x "$INSTALL_DIR/bootstrap.sh"
 
 # ---- 注册系统服务 ----
 log "注册系统服务"
+SERVICE_OK=0
 if command -v systemctl >/dev/null 2>&1 && [ -d /etc/systemd/system ]; then
   cat > /etc/systemd/system/pr-sing.service <<EOF
 [Unit]
@@ -93,19 +112,22 @@ EOF
   systemctl daemon-reload || true
   systemctl enable pr-sing.service || true
   systemctl start pr-sing.service || true
-  echo "尝试注册并启动系统服务 (systemd)"
+  SERVICE_OK=1
+  echo "已注册并启动系统服务 (systemd)"
 fi
 
-# Fallback to /usr/local/bin
-if [ -d /usr/local/bin ]; then
-  cat > /usr/local/bin/pr-sing-start <<EOF
+# 仅当 systemd 不可用时才写 fallback 启动脚本（此前无论成败都写，与描述不符）
+if [ "$SERVICE_OK" -eq 0 ]; then
+  if [ -d /usr/local/bin ]; then
+    cat > /usr/local/bin/pr-sing-start <<EOF
 #!/bin/sh
 PRSING_HOME="$DATA_DIR" python3 "$INSTALL_DIR/run.py" --listen "$PANEL_LISTEN" --port "$PANEL_PORT" &
 EOF
-  chmod +x /usr/local/bin/pr-sing-start
-  echo "已写入 /usr/local/bin/pr-sing-start，请手动启动或加入开机自启。"
-else
-  echo "未检测到 systemd 或 /usr/local/bin，请手动运行：$INSTALL_DIR/bootstrap.sh"
+    chmod +x /usr/local/bin/pr-sing-start
+    echo "无 systemd，已写入 /usr/local/bin/pr-sing-start，请手动启动或加入开机自启。"
+  else
+    echo "未检测到 systemd 或 /usr/local/bin，请手动运行：$INSTALL_DIR/bootstrap.sh"
+  fi
 fi
 
 echo "=== 安装完成 ==="

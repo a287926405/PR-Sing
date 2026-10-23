@@ -101,14 +101,17 @@ def start(settings=None):
     logf.close()
     with open(PID_FILE, "w") as f:
         f.write(str(proc.pid))
-    # 等待启动（最多 6 秒）
-    for _ in range(12):
+    # 等待启动：配置已通过 check，进程存活满 1 秒即视为启动成功；
+    # 只有在 6 秒内提前退出才判定失败（不再无条件等满 6 秒）。
+    for i in range(12):
         time.sleep(0.5)
         if proc.poll() is not None:
             with open(paths.CORE_LOG, "rb") as f:
                 tail = f.read()[-4000:].decode("utf-8", "replace")
             return {"ok": False, "detail": "进程退出 code=%s" % proc.returncode,
                     "output": tail}
+        if i >= 1:
+            break
     write_state({"running": True, "pid": proc.pid,
                  "started_at": int(time.time()),
                  "version": version()})
@@ -197,25 +200,24 @@ def _free_port():
 
 
 def _run_singbox(cfg, timeout):
-    """起临时 sing-box 实例（无 TUN），返回 (proc, log_path, http_proxy)。"""
+    """起临时 sing-box 实例（无 TUN），返回 (proc, log_path, http_proxy)。
+
+    只替换入站为随机端口的 mixed 入站；route 必须原样保留——
+    generate_test_config 已把 final 设为被测节点/链的 tag，
+    覆盖 route 会让测速/出口 IP 测试实际走直连，结果全错。
+    """
     port = _free_port()
     cfg["inbounds"] = [
         {"type": "mixed", "tag": "test-in", "listen": "127.0.0.1", "listen_port": port},
     ]
-    cfg["route"] = {"rules": [{"ip_is_private": True, "outbound": generator.TAG_DIRECT}],
-                    "final": generator.TAG_DIRECT}
-    if "rule_set" in generator._defined_rule_sets():
-        pass
     log_path = paths.CORE_LOG + ".test"
+    # sing-box 的 -c 不支持从 stdin（"-"）读配置，必须落盘到文件再启动；
+    # 此前传 stdin 导致测试实例必然 FATAL: open -: no such file or directory
+    save(paths.CORE_TEST_CONFIG, cfg)
     logf = open(log_path, "ab")
-    proc = subprocess.Popen([core_bin(), "run", "-c", "-"],
-                            stdin=subprocess.PIPE, stdout=logf, stderr=subprocess.STDOUT,
-                            start_new_session=True)
-    try:
-        proc.stdin.write(json.dumps(cfg).encode())
-        proc.stdin.close()
-    except Exception:
-        pass
+    proc = subprocess.Popen([core_bin(), "run", "-c", paths.CORE_TEST_CONFIG],
+                            stdout=logf, stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL, start_new_session=True)
     logf.close()
     return proc, log_path, port
 

@@ -10,11 +10,11 @@ Python3 单服务端 + 原生 Web 面板 + sing-box v1.14 内核，无其他运�
 
 | 模块 | 说明 |
 |---|---|
-| 节点 | 解析 vless / vmess / trojan / ss / hy2 / tuic / naive / socks / http / snell 分享链接；手动编辑 outbound JSON；延迟测速 |
+| 节点 | 解析 vless / vmess / trojan / ss / hy2 / tuic / naive / socks / http 分享链接；手动编辑 outbound JSON；延迟测速（sing-box 无 Snell 出站，不支持 snell 链接） |
 | 订阅 | 添加订阅 URL，一键拉取/全量更新，自动去重 |
 | 链式代理 | 给出口节点指定前置节点（1 个或多个），流量依次经过 前置1 → 前置2 → … → 出口；链对外作为一个整体节点，可加入节点组、被自定义规则引用 |
 | 节点组 | selector（手动）与 urltest（自动测速切换）两种组类型 |
-| 分流 | 全局 / 代理（默认国内直连）/ 自定义模式；内置规则 + 自定义规则（domain / 后缀 / 关键词 / IP 段 / geoip / 端口 / 协议）；rule-set（.srs）驱动的中国域名库；可选广告拦截 |
+| 分流 | 全局 / 代理（默认国内直连）/ 自定义模式；内置规则 + 自定义规则（domain / 后缀 / 关键词 / IP 段 / geoip / 端口 / 协议，其中 geoip 规则基于 geoip-&lt;国家&gt; rule-set，需对应 .srs 已下载，cn 为内置）；rule-set（.srs）驱动的中国域名库；可选广告拦截 |
 | DNS | FakeIP / 常规模式；本地与海外（经代理）DNS 分离解析 |
 | 内核管理 | 启动 / 停止 / 重启 / 配置校验 / 日志查看 / 链出口 IP 测试 |
 
@@ -62,7 +62,6 @@ PRSING_HOME/
 ├── config/            # settings.json / nodes.json / chains.json / groups.json /
 │                      # subscriptions.json / sing-box.generated.json
 ├── data/
-│   ├── geo/           # geoip.dat
 │   └── rule-sets/     # *.srs（中国域名/私有域/广告/中国IP段）
 ├── bin/sing-box       # 内核
 └── logs/              # sing-box.log / prsing.log

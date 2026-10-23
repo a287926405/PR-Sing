@@ -251,7 +251,7 @@ async function parseLinks() {
       box.appendChild(d);
       box.appendChild(el("span", null, " "));
     }
-    for (const e of (r.errors || [])) box.appendChild(el("div", "hint", "✗ " + e));
+    for (const e of (r.errors || [])) box.appendChild(el("div", "hint", "✗ 第" + (e.line != null ? e.line : "?") + "行: " + (e.error || e)));
   } else msg("node-parse-msg", r.error, "err");
 }
 async function importLinks() {
@@ -285,12 +285,12 @@ async function refreshSubs() {
       const t = await api("/api/subs/refresh", "POST", { id: s.id });
       bR.textContent = "更新";
       const res = t.result || {};
-      msg("sub-msg", s.name + ": " + (res.ok === false ? "失败 " + (res.error || "") : "新增 " + (res.added ?? 0) + " / 更新 " + (res.updated ?? 0)), res.ok === false ? "err" : "ok");
+      msg("sub-msg", s.name + ": " + (res.ok === false ? "失败 " + (res.error || "") : "新增 " + (res.added ?? 0) + " / 保留 " + (res.kept ?? 0) + " / 移除 " + (res.removed ?? 0)), res.ok === false ? "err" : "ok");
       refreshSubs();
     };
     const bD = el("button", "sm danger", "删除");
     bD.onclick = async () => {
-      if (!confirm("删除订阅 " + s.name + "（不删已导入节点）？")) return;
+      if (!confirm("删除订阅 " + s.name + "（会同时删除该订阅导入的节点）？")) return;
       await api("/api/subs/" + s.id, "DELETE");
       refreshSubs();
     };
@@ -306,7 +306,7 @@ async function subImportAll() {
   const res = r.result || {};
   const results = res.results || [];
   if (r.ok && results.length) {
-    msg("node-parse-msg", results.map(x => x.name + ": 新增 " + (x.added ?? 0) + "/更新 " + (x.updated ?? 0)).join("，"), "ok");
+    msg("node-parse-msg", results.map(x => x.name + ": 新增 " + (x.added ?? 0) + "/保留 " + (x.kept ?? 0) + "/移除 " + (x.removed ?? 0)).join("，"), "ok");
   } else if (r.ok) {
     msg("node-parse-msg", res.error || JSON.stringify(res), "ok");
   } else msg("node-parse-msg", r.error || "失败", "err");

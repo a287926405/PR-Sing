@@ -212,7 +212,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if p == "/api/logs":
-            self._json(200, core.logs(int(q.get("n", "200") or 200)))
+            self._json(200, core.logs(int(b.get("n", "200") or 200)))
             return
 
         # ---- 节点 ----
@@ -242,23 +242,23 @@ class Handler(BaseHTTPRequestHandler):
             _regen_config()
             return
         if p.startswith("/api/nodes/") and p.endswith("/latency") and method == "POST":
-            nid = p.split("/")[2]
+            nid = p.split("/")[3]
             r = core.test_latency(generator.node_tag(nid))
             nodes.set_latency(nid, r.get("ms"))
             self._json(200, r)
             return
         if p.startswith("/api/nodes/") and method == "GET":
-            n = nodes.get_node(p.split("/")[2])
+            n = nodes.get_node(p.split("/")[3])
             self._json(200 if n else 404, {"ok": n is not None, "node": n})
             return
         if p.startswith("/api/nodes/") and method in ("PUT", "POST"):
-            nid = p.split("/")[2]
+            nid = p.split("/")[3]
             n = nodes.update_node(nid, b)
             self._json(200 if n else 404, {"ok": n is not None, "node": n})
             _regen_config()
             return
         if p.startswith("/api/nodes/") and method == "DELETE":
-            ok = nodes.delete_node(p.split("/")[2])
+            ok = nodes.delete_node(p.split("/")[3])
             self._json(200, {"ok": ok})
             _regen_config()
             return
@@ -279,11 +279,11 @@ class Handler(BaseHTTPRequestHandler):
             _regen_config()
             return
         if p.startswith("/api/subs/") and method in ("PUT", "POST"):
-            sub = subs.update(p.split("/")[2], b)
+            sub = subs.update(p.split("/")[3], b)
             self._json(200 if sub else 404, {"ok": sub is not None, "sub": sub})
             return
         if p.startswith("/api/subs/") and method == "DELETE":
-            ok = subs.delete(p.split("/")[2])
+            ok = subs.delete(p.split("/")[3])
             self._json(200, {"ok": ok})
             _regen_config()
             return
@@ -307,23 +307,27 @@ class Handler(BaseHTTPRequestHandler):
             return
         if p.startswith("/api/chains/") and p.endswith("/egress") and method == "POST":
             from . import chains as chains_mod
-            cid = p.split("/")[2]
+            cid = p.split("/")[3]
             c = chains_mod.get(cid)
             if not c:
                 self._err(404, "chain not found")
                 return
-            r = core.test_egress(generator.chain_pub_tag(cid, len(c["members"])))
+            tag = generator.chain_public_tag(cid)
+            if not tag:
+                self._err(400, "链不可用（已禁用，或成员被删除/禁用）")
+                return
+            r = core.test_egress(tag)
             self._json(200, r)
             return
         if p.startswith("/api/chains/") and method in ("PUT", "POST"):
             from . import chains as chains_mod
-            c = chains_mod.update(p.split("/")[2], b)
+            c = chains_mod.update(p.split("/")[3], b)
             self._json(200 if c else 404, {"ok": c is not None, "chain": c})
             _regen_config()
             return
         if p.startswith("/api/chains/") and method == "DELETE":
             from . import chains as chains_mod
-            ok = chains_mod.delete(p.split("/")[2])
+            ok = chains_mod.delete(p.split("/")[3])
             self._json(200, {"ok": ok})
             _regen_config()
             return
@@ -342,12 +346,12 @@ class Handler(BaseHTTPRequestHandler):
             _regen_config()
             return
         if p.startswith("/api/groups/") and method in ("PUT", "POST"):
-            g = groups.update(p.split("/")[2], b)
+            g = groups.update(p.split("/")[3], b)
             self._json(200 if g else 404, {"ok": g is not None, "group": g})
             _regen_config()
             return
         if p.startswith("/api/groups/") and method == "DELETE":
-            ok = groups.delete(p.split("/")[2])
+            ok = groups.delete(p.split("/")[3])
             self._json(200, {"ok": ok})
             _regen_config()
             return

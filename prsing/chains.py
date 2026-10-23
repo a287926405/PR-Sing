@@ -74,13 +74,18 @@ def delete(chain_id: str) -> bool:
     new = [c for c in chains if c["id"] != chain_id]
     if len(new) == len(chains):
         return False
-    # 清理引用了该链的组
+    # 清理所有引用了该链的组（改同一份数据再保存，避免改动丢失）
     from . import groups as groups_mod
-    for g in groups_mod.list_groups():
+    all_groups = groups_mod.list_groups()
+    changed = False
+    for g in all_groups:
         if chain_id in g.get("members", []):
             g["members"] = [m for m in g["members"] if m != chain_id]
-            groups_mod._save(groups_mod.list_groups())
-            break
+            if g.get("default") == chain_id:
+                g["default"] = g["members"][0] if g["members"] else ""
+            changed = True
+    if changed:
+        groups_mod._save(all_groups)
     _save(new)
     return True
 
@@ -96,6 +101,8 @@ def _validate(name: str, member_ids: list, self_id: str):
         node = nodes_mod.get_node(mid)
         if not node:
             raise ValueError(f"链成员不存在（可能是节点 {mid[:8]}）")
+        if not node.get("enabled"):
+            raise ValueError(f"节点 {node['name']} 已禁用，不能作为链成员")
         if node["type"] not in ("socks", "http", "vless", "vmess", "trojan",
                                 "shadowsocks", "hysteria2", "tuic", "naive"):
             raise ValueError(f"节点 {node['name']} 的类型 {node['type']} 不能作为链成员")
