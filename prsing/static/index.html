@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR-Sing</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<!-- 登录 -->
+<div id="login-view" class="hidden">
+  <div class="login-card">
+    <h1>PR-Sing</h1>
+    <p class="sub">sing-box 透明代理面板</p>
+    <input id="login-pw" type="password" placeholder="面板密码" autofocus>
+    <button id="login-btn">登 录</button>
+    <p id="login-err" class="err"></p>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="app" class="hidden">
+  <header>
+    <div class="title">
+      <span class="logo">PR-Sing</span>
+      <span id="core-badge" class="badge">内核: 检测中</span>
+    </div>
+    <nav id="tabs">
+      <button data-tab="status" class="on">状态</button>
+      <button data-tab="nodes">节点</button>
+      <button data-tab="subs">订阅</button>
+      <button data-tab="chains">链式代理</button>
+      <button data-tab="groups">节点组</button>
+      <button data-tab="rules">分流规则</button>
+      <button data-tab="settings">设置</button>
+    </nav>
+    <button id="logout" class="ghost">退出</button>
+  </header>
+
+  <main>
+    <!-- 状态 -->
+    <section id="tab-status" class="tab on">
+      <div class="grid2">
+        <div class="card">
+          <h2>内核</h2>
+          <div id="core-info" class="kv"></div>
+          <div class="row">
+            <button id="btn-core-start">启动</button>
+            <button id="btn-core-stop">停止</button>
+            <button id="btn-core-restart">重启</button>
+            <button id="btn-core-regen" class="ghost">校验配置</button>
+          </div>
+          <p id="core-msg" class="msg"></p>
+        </div>
+        <div class="card">
+          <h2>统计</h2>
+          <div id="stat-info" class="kv"></div>
+          <h2>规则库 / Geo</h2>
+          <div id="rules-info" class="kv"></div>
+          <button id="btn-rules-update" class="ghost">更新规则库</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>内核日志 <button id="btn-log-refresh" class="ghost sm">刷新</button></h2>
+        <pre id="log-view" class="log"></pre>
+      </div>
+    </section>
+
+    <!-- 节点 -->
+    <section id="tab-nodes" class="tab">
+      <div class="card">
+        <h2>导入链接</h2>
+        <textarea id="node-import-text" rows="5" placeholder="粘贴 vless:// vmess:// trojan:// ss:// hy2:// tuic:// socks:// 等链接，一行一条"></textarea>
+        <div class="row">
+          <button id="btn-node-parse">解析</button>
+          <button id="btn-node-import">解析并添加</button>
+          <button id="btn-sub-import" class="ghost">从订阅拉取</button>
+        </div>
+        <p id="node-parse-msg" class="msg"></p>
+        <div id="node-parse-list"></div>
+      </div>
+      <div class="card">
+        <h2>节点列表</h2>
+        <table id="node-table">
+          <thead><tr><th>名称</th><th>类型</th><th>地址</th><th>延迟</th><th>启用</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 订阅 -->
+    <section id="tab-subs" class="tab">
+      <div class="card">
+        <h2>添加订阅</h2>
+        <div class="row">
+          <input id="sub-name" placeholder="名称">
+          <input id="sub-url" placeholder="https:// 订阅地址" style="flex:1">
+          <button id="btn-sub-add">添加</button>
+        </div>
+        <p id="sub-msg" class="msg"></p>
+      </div>
+      <div class="card">
+        <h2>订阅列表 <button id="btn-sub-refresh-all" class="ghost sm">全部更新</button></h2>
+        <table id="sub-table">
+          <thead><tr><th>名称</th><th>地址</th><th>节点数</th><th>更新时间</th><th>启用</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 链式代理 -->
+    <section id="tab-chains" class="tab">
+      <div class="card">
+        <h2>创建链</h2>
+        <p class="hint">流量依次经过：前置 1 → 前置 2 → … → 出口。链建好后会作为一个整体节点，可用于节点组。</p>
+        <div class="row">
+          <input id="chain-name" placeholder="链名称，如 美-日出口">
+          <span class="hint">成员（按顺序选择）：</span>
+        </div>
+        <div id="chain-member-picks" class="row wrap"></div>
+        <div class="row">
+          <button id="btn-chain-add">创建</button>
+        </div>
+        <p id="chain-msg" class="msg"></p>
+      </div>
+      <div class="card">
+        <h2>链列表</h2>
+        <div id="chain-list"></div>
+      </div>
+    </section>
+
+    <!-- 节点组 -->
+    <section id="tab-groups" class="tab">
+      <div class="card">
+        <h2>创建组</h2>
+        <div class="row">
+          <input id="group-name" placeholder="组名">
+          <select id="group-type">
+            <option value="selector">selector 手动切换</option>
+            <option value="urltest">urltest 自动测速</option>
+          </select>
+        </div>
+        <p class="hint">成员（节点或链，顺序即优先级）：</p>
+        <div id="group-member-picks" class="row wrap"></div>
+        <div class="row">
+          <button id="btn-group-add">创建</button>
+        </div>
+        <p id="group-msg" class="msg"></p>
+      </div>
+      <div class="card">
+        <h2>组列表</h2>
+        <div id="group-list"></div>
+      </div>
+    </section>
+
+    <!-- 分流规则 -->
+    <section id="tab-rules" class="tab">
+      <div class="card">
+        <h2>自定义规则 <span class="hint">（排在内置规则之后生效）</span></h2>
+        <div class="row">
+          <select id="cr-type">
+            <option value="domain">domain 域名</option>
+            <option value="domain_suffix">domain_suffix 后缀</option>
+            <option value="domain_keyword">domain_keyword 关键词</option>
+            <option value="ip_cidr">ip_cidr IP 段</option>
+            <option value="geoip">geoip 国家库</option>
+            <option value="port">port 端口</option>
+            <option value="protocol">protocol 协议</option>
+          </select>
+          <input id="cr-value" placeholder="如 example.com / 8.8.8.8/32 / 443" style="flex:1">
+          <select id="cr-out"></select>
+          <button id="btn-cr-add">添加</button>
+        </div>
+        <p class="hint">域名可逗号分隔多条。</p>
+      </div>
+      <div class="card">
+        <h2>规则列表</h2>
+        <div id="cr-list" class="kv"></div>
+      </div>
+    </section>
+
+    <!-- 设置 -->
+    <section id="tab-settings" class="tab">
+      <div class="card">
+        <h2>内核与入站</h2>
+        <div class="kv form" id="form-core"></div>
+      </div>
+      <div class="card">
+        <h2>DNS</h2>
+        <div class="kv form" id="form-dns"></div>
+      </div>
+      <div class="card">
+        <h2>分流模式</h2>
+        <div class="kv form" id="form-route"></div>
+      </div>
+      <div class="card">
+        <h2>面板</h2>
+        <div class="kv form" id="form-panel"></div>
+        <div class="row">
+          <button id="btn-settings-save">保存设置</button>
+          <button id="btn-pw" class="ghost">修改密码</button>
+        </div>
+        <p id="settings-msg" class="msg"></p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="modal" class="hidden"><div class="modal-card"><div id="modal-body"></div></div></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
