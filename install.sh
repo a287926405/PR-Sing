@@ -4,7 +4,8 @@ set -e
 
 REPO="a287926405/PR-Sing"
 GH="https://github.com/${REPO}"
-GH_PROXY="${GH_PROXY:-https://gh-proxy.com/}"
+# GH_PROXY 由 bootstrap.sh 通过环境变量传入，默认为空（直连）
+GH_PROXY="${GH_PROXY:-}"
 
 log() { echo "=== $* ==="; }
 

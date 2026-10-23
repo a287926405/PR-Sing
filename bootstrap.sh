@@ -7,7 +7,7 @@ set -e
 REPO="a287926405/PR-Sing"
 RAW="https://raw.githubusercontent.com/${REPO}/master"
 GH="https://github.com/${REPO}"
-GH_PROXY="${GH_PROXY:-https://gh-proxy.com/}"
+export GH_PROXY="${GH_PROXY:-https://gh-proxy.com/}"
 
 log() { echo "=== $* ==="; }
 
@@ -43,9 +43,6 @@ if [ -z "$REPO_DIR" ] || [ ! -f "$REPO_DIR/install.sh" ]; then
   echo "错误：解压后未找到 PR-Sing 源码目录"; exit 1
 fi
 
-# 4. 让安装脚本内的 github.com 资源（如 sing-box 内核）走代理
-sed -i "s#https://github.com#${GH_PROXY}https://github.com#g; s#https://raw.githubusercontent.com#${GH_PROXY}https://raw.githubusercontent.com#g" "$REPO_DIR/install.sh" 2>/dev/null || true
-
-# 5. 启动安装（install.sh 自身会以脚本所在目录为代码目录）
+# 4. 启动安装（install.sh 自身会以脚本所在目录为代码目录）
 log "启动安装程序"
 sh "$REPO_DIR/install.sh" "$@"
