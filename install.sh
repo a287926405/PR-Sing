@@ -90,11 +90,14 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 EOF
-  systemctl daemon-reload
-  systemctl enable pr-sing.service
-  systemctl start pr-sing.service
-  echo "服务已注册并启动：pr-sing.service"
-elif [ -d /usr/local/bin ]; then
+  systemctl daemon-reload || true
+  systemctl enable pr-sing.service || true
+  systemctl start pr-sing.service || true
+  echo "尝试注册并启动系统服务 (systemd)"
+fi
+
+# Fallback to /usr/local/bin
+if [ -d /usr/local/bin ]; then
   cat > /usr/local/bin/pr-sing-start <<EOF
 #!/bin/sh
 PRSING_HOME="$DATA_DIR" python3 "$INSTALL_DIR/run.py" --listen "$PANEL_LISTEN" --port "$PANEL_PORT" &
@@ -102,7 +105,7 @@ EOF
   chmod +x /usr/local/bin/pr-sing-start
   echo "已写入 /usr/local/bin/pr-sing-start，请手动启动或加入开机自启。"
 else
-  echo "未检测到 systemd，请手动运行：$INSTALL_DIR/bootstrap.sh"
+  echo "未检测到 systemd 或 /usr/local/bin，请手动运行：$INSTALL_DIR/bootstrap.sh"
 fi
 
 echo "=== 安装完成 ==="
