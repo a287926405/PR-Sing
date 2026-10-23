@@ -24,11 +24,22 @@ RULESETS = {
 GEO_FILES = {}
 
 
+def _dl_prefix() -> str:
+    """下载代理前缀（与 manage.sh 选择的下载源一致，如 https://gh-proxy.com/）。
+
+    manage.sh 通过启动器/systemd 注入 PRSING_DL_PREFIX；未设置时直连。
+    """
+    p = os.environ.get("PRSING_DL_PREFIX", "").strip()
+    if p and not p.endswith("/"):
+        p += "/"
+    return p
+
+
 def _ruleset_url_base(s: dict, source: str) -> str:
     base = s.get("rule_set_url_base", "https://raw.githubusercontent.com/SagerNet").rstrip("/")
     if source == "geoip":
-        return f"{base}/sing-geoip/rule-set"
-    return f"{base}/sing-geosite/rule-set"
+        return f"{_dl_prefix()}{base}/sing-geoip/rule-set"
+    return f"{_dl_prefix()}{base}/sing-geosite/rule-set"
 
 
 def _geo_release_url(s: dict, source: str, asset: str) -> str:
@@ -36,7 +47,7 @@ def _geo_release_url(s: dict, source: str, asset: str) -> str:
     return f"{base}/sing-{source}/releases/latest/download/{asset}"
 
 
-def _download(url: str, dest: str, timeout: int = 120):
+def _download(url: str, dest: str, timeout: int = 45):
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     req = urllib.request.Request(url, headers=_UA)
     with urllib.request.urlopen(req, timeout=timeout) as resp, open(dest + ".part", "wb") as f:

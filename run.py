@@ -27,12 +27,20 @@ def main():
     paths_mod.ensure_dirs()
 
     if not args.no_ensure:
-        try:
-            r = rules.ensure_all(quiet=True)
-            if r.get("errors"):
-                print("[pr-sing] 规则库/Geo 下载警告: %s" % r["errors"], flush=True)
-        except Exception as e:
-            print("[pr-sing] 规则库自检失败（继续运行）: %s" % e, flush=True)
+        # 规则库下载放到后台线程：下载源不可达时（如 GitHub 直连被墙）
+        # 不能阻塞面板监听端口的打开——此前同步下载会让服务看似已启动、
+        # 端口却迟迟不监听，面板打不开。
+        import threading
+
+        def _ensure_bg():
+            try:
+                r = rules.ensure_all(quiet=True)
+                if r.get("errors"):
+                    print("[pr-sing] 规则库下载警告: %s" % r["errors"], flush=True)
+            except Exception as e:
+                print("[pr-sing] 规则库自检失败（继续运行）: %s" % e, flush=True)
+
+        threading.Thread(target=_ensure_bg, daemon=True).start()
 
     if not args.no_auto and s.get("auto_start_core", True):
         from prsing import core

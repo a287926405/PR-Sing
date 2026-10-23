@@ -5,7 +5,7 @@
 # 链式代理模块完整保留并可在「功能」菜单中操作。）
 # shellcheck shell=bash
 
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 # ==================== 配置 ====================
 REPO="a287926405/PR-Sing"
@@ -217,6 +217,20 @@ create_launcher() {
 cd "$(dirname "$0")" || exit 1
 INSTALL_DIR="$(pwd)"
 export PRSING_HOME="$INSTALL_DIR"
+# 下载源前缀（与 manage.sh 选择一致，供面板规则库下载使用）
+if [ -z "${PRSING_DL_PREFIX:-}" ]; then
+    if [ -n "${GH_PROXY:-}" ]; then
+        PRSING_DL_PREFIX="$GH_PROXY"
+    elif [ -f /etc/pr-sing-manage.conf ]; then
+        _src=$(grep '^DOWNLOAD_SOURCE=' /etc/pr-sing-manage.conf 2>/dev/null | cut -d= -f2)
+        case "$_src" in
+            2) PRSING_DL_PREFIX="https://gh-proxy.com/" ;;
+            3) PRSING_DL_PREFIX="https://ghfast.top/" ;;
+            *) PRSING_DL_PREFIX="" ;;
+        esac
+    fi
+    export PRSING_DL_PREFIX
+fi
 if [ "$1" = "run" ]; then
     shift
     if [ -n "${PRSING_PANEL_PORT:-}" ]; then
@@ -245,6 +259,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=${INSTALL_DIR}
 Environment="PRSING_HOME=${INSTALL_DIR}"
+Environment="PRSING_DL_PREFIX=$(src_prefix)"
 ExecStart="${INSTALL_DIR}/pr-sing" run
 KillMode=mixed
 TimeoutStopSec=30s
