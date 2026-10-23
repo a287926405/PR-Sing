@@ -73,8 +73,11 @@ def check_config(cfg=None):
     if cfg is not None:
         target = paths.CORE_TEST_CONFIG
         save(target, cfg)
-    r = subprocess.run([core_bin(), "check", "-c", target],
-                       capture_output=True, text=True, timeout=60)
+    try:
+        r = subprocess.run([core_bin(), "check", "-c", target],
+                           capture_output=True, text=True, timeout=60)
+    except OSError as e:
+        return {"ok": False, "code": -1, "output": "内核不可用: %s" % e}
     return {
         "ok": r.returncode == 0,
         "code": r.returncode,

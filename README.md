@@ -20,16 +20,20 @@ Python3 单服务端 + 原生 Web 面板 + sing-box v1.14 内核，无其他运�
 
 ## 快速开始
 
+与 SMBox 相同的单脚本管理方式：下载 `manage.sh` 运行，菜单里选 1 部署即可（自动检测安装/升级）。
+
 ```bash
-git clone https://github.com/a287926405/PR-Sing.git
-cd PR-Sing
-./install.sh            # 安装代码 + 下载 sing-box v1.14.3 内核 + 注册服务
+wget https://gh-proxy.com/https://raw.githubusercontent.com/a287926405/PR-Sing/master/manage.sh -O manage.sh && chmod +x manage.sh && ./manage.sh
 ```
+
+也可以直接用命令：`./manage.sh deploy`（稳定版）/ `./manage.sh deploy beta` / `./manage.sh --dir /root deploy` / `./manage.sh status` 等，`./manage.sh help` 查看全部命令。
+
+菜单结构（与 SMBox 对齐）：部署（稳定版/测试版）、管理（状态/启动/停止/重启）、维护（重置配置/卸载）、设置（下载源/安装目录/系统环境）、迁移（从旧版本迁移），另加 PR-Sing 功能区：**13 链式代理管理、14 节点管理**（也可用 `./manage.sh chain list`、`./manage.sh node list` 等命令）。
 
 安装后访问 `http://<设备IP>:3001`，默认密码 `pr-sing`（登录后请立即修改）。
 
 > 要求：Linux（含 OpenWrt/iStoreOS 等路由系统）、python3、可访问 GitHub 下载内核。
-> 不依赖 systemd 的环境（多数路由器）会自动改用 `/usr/local/bin/pr-sing-start` 启动。
+> systemd / OpenRC 环境自动注册 `pr-sing` 服务；无服务管理器的环境可用安装目录下的 `./pr-sing run` 手动启动。
 
 ### 不使用安装脚本
 
@@ -57,8 +61,13 @@ outbound pr-c-<id>-hN  (出口,  detour → pr-c-<id>-hN-1)   ← 对外 tag
 
 ## 目录结构
 
+`manage.sh` 部署后为 SMBox 式单目录布局（默认 `/opt/pr-sing`，代码与数据同目录，`PRSING_HOME` 即安装目录）：
+
 ```
-PRSING_HOME/
+/opt/pr-sing/
+├── manage.sh          # 管理脚本（菜单/命令与 SMBox 对齐）
+├── pr-sing            # 启动器（服务 ExecStart，也可 ./pr-sing run / ./pr-sing cli ...）
+├── run.py  prsing/    # 面板与引擎代码
 ├── config/            # settings.json / nodes.json / chains.json / groups.json /
 │                      # subscriptions.json / sing-box.generated.json
 ├── data/
@@ -66,6 +75,8 @@ PRSING_HOME/
 ├── bin/sing-box       # 内核
 └── logs/              # sing-box.log / prsing.log
 ```
+
+旧版嵌套布局（数据在 `/opt/pr-sing/data` 下）可用菜单 12「从旧版本迁移」或 `./manage.sh migrate` 一键迁到新布局。
 
 ## 安全
 
